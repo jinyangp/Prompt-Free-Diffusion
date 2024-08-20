@@ -1,5 +1,5 @@
-matplotlib==3.4.2
-pyyaml==5.4.1
+matplotlib
+pyyaml==5.3.1
 easydict==1.9
 tensorboardx==2.6
 tensorboard==2.12.0
@@ -18,6 +18,9 @@ webdataset==0.2.5
 gradio==3.17.1
 
 safetensors==0.3.1
+
+numpy==1.24.1 # originally numpy 2.1.0
+argparse
 
 opencv-python
 scikit-image

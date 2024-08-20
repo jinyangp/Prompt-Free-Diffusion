@@ -1,16 +1,11 @@
-################################################################################
-# Copyright (C) 2023 Xingqian Xu - All Rights Reserved                         #
-#                                                                              #
-# Please visit Prompt-Free-Diffusion's arXiv paper for more details, link at   #
-# arxiv.org/abs/2305.16223                                                     #
-#                                                                              #
-################################################################################
-
-import gradio as gr
+import os
 import os.path as osp
 from PIL import Image
 import numpy as np
 import time
+
+import argparse # TODO: Install it
+from datetime import datetime
 
 import torch
 import torchvision.transforms as tvtrans
@@ -19,8 +14,6 @@ from lib.model_zoo import get_model
 
 from collections import OrderedDict
 from lib.model_zoo.ddim import DDIMSampler
-
-n_sample_image = 1
 
 controlnet_path = OrderedDict([
     # ['canny'             , ('canny'   , 'pretrained/controlnet/control_sd15_canny_slimmed.safetensors')],
@@ -68,9 +61,7 @@ ctxencoder_path = OrderedDict([
     # ['SeeCoder-Anime', 'pretrained/pfd/seecoder/seecoder-anime-v1-0.safetensors'],
 ])
 
-##########
-# helper #
-##########
+n_sample_image = 1
 
 def highlight_print(info):
     print('')
@@ -89,11 +80,7 @@ def load_sd_from_file(target):
         sd = OrderedDict(stload(target, device='cpu'))
     else:
         assert False, "File type must be .ckpt or .pth or .safetensors"
-    return sd
-
-########
-# main #
-########
+    return sd   
 
 class prompt_free_diffusion(object):
     def __init__(self, 
@@ -280,224 +267,92 @@ class prompt_free_diffusion(object):
 pfd_inference = prompt_free_diffusion(
     fp16=True, tag_ctx = 'SeeCoder', tag_diffuser = 'SD-v1.5', tag_ctl = 'openpose')
 
-#################
-# sub interface #
-#################
-
-cache_examples = False
-
-def get_example():
-    case = [
-        [
-            'assets/examples/ghibli-input.jpg', 
-            'assets/examples/ghibli-canny.png', 
-            'canny', False, 
-            768, 1024, 1.8, 23, 
-            'SeeCoder', 'Deliberate-v2.0', 'canny', ],
-        [
-            'assets/examples/astronautridinghouse-input.jpg', 
-            'assets/examples/astronautridinghouse-canny.png', 
-            'canny', False, 
-            512, 768, 2.0, 21, 
-            'SeeCoder', 'Deliberate-v2.0', 'canny', ],
-        [
-            'assets/examples/grassland-input.jpg', 
-            'assets/examples/grassland-scribble.png', 
-            'scribble', False, 
-            768, 512, 2.0, 41, 
-            'SeeCoder', 'Deliberate-v2.0', 'scribble', ],
-        [
-            'assets/examples/jeep-input.jpg', 
-            'assets/examples/jeep-depth.png', 
-            'depth', False, 
-            512, 768, 2.0, 30, 
-            'SeeCoder', 'Deliberate-v2.0', 'depth', ],
-        [
-            'assets/examples/bedroom-input.jpg', 
-            'assets/examples/bedroom-mlsd.png', 
-            'mlsd', False, 
-            512, 512, 2.0, 31, 
-            'SeeCoder', 'Deliberate-v2.0', 'mlsd', ],
-        [
-            'assets/examples/nightstreet-input.jpg', 
-            'assets/examples/nightstreet-canny.png', 
-            'canny', False, 
-            768, 512, 2.3, 20, 
-            'SeeCoder', 'Deliberate-v2.0', 'canny', ],
-        [
-            'assets/examples/woodcar-input.jpg', 
-            'assets/examples/woodcar-depth.png', 
-            'depth', False, 
-            768, 512, 2.0, 20, 
-            'SeeCoder', 'Deliberate-v2.0', 'depth', ],
-        [
-            'assets/examples-anime/miku.jpg', 
-            'assets/examples-anime/miku-canny.png', 
-            'canny', False, 
-            768, 576, 1.5, 22, 
-            'SeeCoder-Anime', 'Anything-v4', 'canny', ],
-        [
-            'assets/examples-anime/random1.jpg', 
-            'assets/examples-anime/pose.png', 
-            'openpose', False, 
-            768, 1536, 2.5, 28, 
-            'SeeCoder-Anime', 'Oam-v2', 'openpose_v11p', ], 
-        [
-            'assets/examples-anime/camping.jpg', 
-            'assets/examples-anime/pose.png', 
-            'openpose', False, 
-            768, 1536, 2.0, 35, 
-            'SeeCoder-Anime', 'Anything-v4', 'openpose_v11p', ],
-        [
-            'assets/examples-anime/hanfu_girl.jpg', 
-            'assets/examples-anime/pose.png', 
-            'openpose', False, 
-            768, 1536, 2.0, 20, 
-            'SeeCoder-Anime', 'Anything-v4', 'openpose_v11p', ],
-    ]
-    return case
-
-def interface():
-    with gr.Row():
-        with gr.Column():
-            img_input = gr.Image(label='Image Input', type='pil', elem_id='customized_imbox')
-            with gr.Row():
-                out_width  = gr.Slider(label="Width" , minimum=512, maximum=1536, value=512, step=64, visible=True)
-                out_height = gr.Slider(label="Height", minimum=512, maximum=1536, value=512, step=64, visible=True)
-            with gr.Row():
-                scl_lvl = gr.Slider(label="CFGScale", minimum=0, maximum=10, value=2, step=0.01, visible=True)
-                seed = gr.Number(20, label="Seed", precision=0)
-            with gr.Row():
-                tag_ctx = gr.Dropdown(label='Context Encoder', choices=[pi for pi in ctxencoder_path.keys()], value='SeeCoder')
-                tag_diffuser = gr.Dropdown(label='Diffuser', choices=[pi for pi in diffuser_path.keys()], value='SD-v1.5')
-            button = gr.Button("Run")
-        with gr.Column():
-            ctl_input = gr.Image(label='Control Input', type='pil', elem_id='customized_imbox')
-            do_preprocess = gr.Checkbox(label='Preprocess', value=False)
-            with gr.Row():
-                ctl_method = gr.Dropdown(label='Preprocess Type', choices=preprocess_method, value='openpose')
-                tag_ctl    = gr.Dropdown(label='ControlNet',      choices=[pi for pi in controlnet_path.keys()], value='openpose')
-        with gr.Column():
-            img_output = gr.Gallery(label="Image Result", elem_id='customized_imbox').style(grid=n_sample_image+1)
-
-    tag_ctl.change(
-        pfd_inference.action_autoset_method,
-        inputs = [tag_ctl],
-        outputs = [ctl_method],)
-
-    ctl_input.change(
-        pfd_inference.action_autoset_hw,
-        inputs = [ctl_input],
-        outputs = [out_height, out_width],)
-
-    # tag_ctx.change(
-    #     pfd_inference.action_load_ctx,
-    #     inputs = [tag_ctx],
-    #     outputs = [tag_ctx],)
-
-    # tag_diffuser.change(
-    #     pfd_inference.action_load_diffuser,
-    #     inputs = [tag_diffuser],
-    #     outputs = [tag_diffuser],)
-
-    # tag_ctl.change(
-    #     pfd_inference.action_load_ctl,
-    #     inputs = [tag_ctl],
-    #     outputs = [tag_ctl],)
-
-    button.click(
-        pfd_inference.action_inference,
-        inputs=[img_input, ctl_input, ctl_method, do_preprocess, 
-                out_height, out_width, scl_lvl, seed, 
-                tag_ctx, tag_diffuser, tag_ctl, ],
-        outputs=[img_output])
+def generate(input_image_fp: str,
+             control_image_fp: str,
+             fp16: bool = True,
+             tag_ctx: str = "SeeCoder",
+             tag_diffuser: str = "SD-v1.5",
+             tag_ctl: str = "openpose",
+             ctl_method: str = "openpose",
+             do_preprocess: bool = True,
+             output_height: int = 512,
+             output_width: int = 512,
+             scl_level: float = 2.,
+             seed: int = 42,
+             output_dir: str = None
+             ):
     
-    # gr.Examples(
-    #     label='Examples', 
-    #     examples=get_example(), 
-    #     fn=pfd_inference.action_inference,
-    #     inputs=[img_input, ctl_input, ctl_method, do_preprocess,
-    #             out_height, out_width, scl_lvl, seed, 
-    #             tag_ctx, tag_diffuser, tag_ctl, ],
-    #     outputs=[img_output],
-    #     cache_examples=cache_examples,)
+    input_image_pil = Image.open(os.path.join(os.getcwd(), input_image_fp))
+    control_image_pil = Image.open(os.path.join(os.getcwd(), control_image_fp))
 
-#############
-# Interface #
-#############
+    pfd_inference = prompt_free_diffusion(fp16=fp16,
+                                          tag_ctx=tag_ctx,
+                                          tag_diffuser=tag_diffuser,
+                                          tag_ctl=tag_ctl)
+    
+    img_outputs = pfd_inference.action_inference(input_image_pil,
+                                                 control_image_pil,
+                                                 ctl_method,
+                                                 do_preprocess,
+                                                 output_height,
+                                                 output_width,
+                                                 scl_level,
+                                                 seed,
+                                                 tag_ctx,
+                                                 tag_diffuser,
+                                                 tag_ctl)
+    
+    if output_dir:
+        output_dir = os.path.join(os.getcwd(), output_dir)
+        if not os.path.isdir(output_dir):
+            os.mkdir(output_dir)
 
-css = """
-    #customized_imbox {
-        min-height: 450px;
-    }
-    #customized_imbox>div[data-testid="image"] {
-        min-height: 450px;
-    }
-    #customized_imbox>div[data-testid="image"]>div {
-        min-height: 450px;
-    }
-    #customized_imbox>div[data-testid="image"]>iframe {
-        min-height: 450px;
-    }
-    #customized_imbox>div.unpadded_box {
-        min-height: 450px;
-    }
-    #myinst {
-        font-size: 0.8rem; 
-        margin: 0rem;
-        color: #6B7280;
-    }
-    #maskinst {
-        text-align: justify;
-        min-width: 1200px;
-    }
-    #maskinst>img {
-        min-width:399px;
-        max-width:450px;
-        vertical-align: top;
-        display: inline-block;
-    }
-    #maskinst:after {
-        content: "";
-        width: 100%;
-        display: inline-block;
-    }
-"""
+        output_img = img_outputs[0]
+        procsessed_control_img = img_outputs[1]
 
-if True:
-    with gr.Blocks(css=css) as demo:
-        gr.HTML(
-            """
-            <div style="text-align: center; max-width: 1200px; margin: 20px auto;">
-            <h1 style="font-weight: 900; font-size: 3rem; margin: 0rem">
-                Prompt-Free Diffusion
-            </h1>
-            <p style="font-size: 1rem; margin: 0rem">
-                Xingqian Xu<sup>1,6</sup>, Jiayi Guo<sup>1,2</sup>, Zhangyang Wang<sup>3,6</sup>, Gao Huang<sup>2</sup>, Irfan Essa<sup>4,5</sup>, and Humphrey Shi<sup>1,6</sup>
-            </p>
-            <p style="font-size: 0.8rem; margin: 0rem; line-height: 1em">
-                <sup>1</sup>SHI Labs @ UIUC & Oregon, <sup>2</sup>Tsinghua University, <sup>3</sup>UT Austin, <sup>4</sup>Georgia Tech, <sup>5</sup>Google Research, <sup>6</sup>Picsart AI Research (PAIR)
-            </p>
-            <p style="font-size: 0.9rem; margin: 0rem; line-height: 1.2em; margin-top:1em">
-                The performance of Text2Image is largely dependent on text prompts. 
-                In Prompt-Free Diffusion, no prompt is needed, just a reference images! 
-                At the core of Prompt-Free Diffusion is an image-only semantic context encoder (SeeCoder). 
-                SeeCoder is reusable to most CLIP-based T2I models: just drop in and replace CLIP, then you will create your own prompt-free diffusion.
-                <a href="https://github.com/SHI-Labs/Prompt-Free-Diffusion">[Github]</a> <a href="https://arxiv.org/abs/2305.16223">[arXiv]</a>
-            </p>
-            </div>
-            """)
+        output_img.save(os.path.join(output_dir, f"generated_output_image.jpg"))
+        procsessed_control_img.save(os.path.join(output_dir, f"processed_control_image.jpg"))
 
-        interface()
+        print(f"SUCCESS - Images successfully saved to {output_dir}.")
+    
+    return img_outputs
 
-        # gr.HTML(
-        #     """
-        #     <div style="text-align: justify; max-width: 1200px; margin: 20px auto;">
-        #     <h3 style="font-weight: 450; font-size: 0.8rem; margin: 0rem">
-        #     <b>Version</b>: {}
-        #     </h3>
-        #     </div>
-        #     """.format(' '+str(pfd_inference.pretrained)))
 
-    demo.launch(server_name="0.0.0.0", server_port=11234, share=True)
-    # demo.launch()
+if __name__ == "__main__":
+
+    # Get the current timestamp
+    current_timestamp = datetime.now()
+    # Format the timestamp in DDMMYY-HH:MM:SS format
+    formatted_timestamp = current_timestamp.strftime("%d%m%y-%H:%M:%S")
+    
+    parser = argparse.ArgumentParser(description="Generate image using pre-trained models pipelines.")
+    parser.add_argument("input_image_fp", type=str, help="Path to source image to base generation off.")
+    parser.add_argument("control_image_fp", type=str, help="Path to control image to base generation off.")
+    parser.add_argument("--fp16", action="store_true", help="Flag whether to use fp16.")
+    parser.add_argument("--tag_ctx", type=str, default="SeeCoder", help="Name of context model to use.")
+    parser.add_argument("--tag_diffuser", type=str, default="SD-v1.5", help="Name of diffusion model to use.")
+    parser.add_argument("--tag_ctl", type=str, default="openpose", help="Name of control model to use.")
+    parser.add_argument("--ctl_method", type=str, default="openpose", help="Name of control method to use.")
+    parser.add_argument("--do_preprocess", action="store_true", help="Flag whether to do preprocessing for control model selected. Put False if using OpenPose skeletal map directly, True otherwise")
+    parser.add_argument("--output_height", type=int, default=512, help="Height of output image.")
+    parser.add_argument("--output_width", type=int, default=512, help="Width of output image.")
+    parser.add_argument("--scl_level", type=float, default=2., help="CFG Scale Level.")
+    parser.add_argument("--seed", type=int, default=42, help="Seed to base generation off.")
+    parser.add_argument("--output_dir", type=str, default=f"demo/output/{formatted_timestamp}", help='Name of output dir to save generated images to.')
+
+    args = parser.parse_args()
+
+    generate(args.input_image_fp,
+             args.control_image_fp,
+             args.fp16,
+             args.tag_ctx,
+             args.tag_diffuser,
+             args.tag_ctl,
+             args.ctl_method,
+             args.do_preprocess,
+             args.output_height,
+             args.output_width,
+             args.scl_level,
+             args.seed,
+             args.output_dir
+             )
