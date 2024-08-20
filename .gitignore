@@ -15,3 +15,4 @@ src/*/dist
 src/*/*.egg-info/
 extensions/
 extensions
+demo
